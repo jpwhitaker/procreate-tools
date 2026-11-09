@@ -1,0 +1,24 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+.venv/
+venv/
+
+# Artwork, device backups, and generated reports stay local.
+*.procreate
+*.png
+*.jpg
+*.jpeg
+*.zip
+*.db
+*.db-*
+*.plist
+*.json
+*.log
+*.partial
+.running
+archives/
+artwork-backups/
+previews/
+samples/
+verification/
