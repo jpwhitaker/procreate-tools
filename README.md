@@ -1,160 +1,233 @@
-# Procreate Tools
+# ProSave
 
-**Turn a local iPad backup into an archive of editable Procreate artwork.**
+ProSave saves the Procreate artwork from an iPad backup as individual, editable `.procreate` files, including stored layers and time-lapse data. This lets you back up your gallery without selecting and exporting each canvas in Procreate.
 
-Backing up a large Procreate collection by selecting and exporting canvases in the app is tedious. A whole-device backup can protect that work, but it does not present the artwork as a folder of individual `.procreate` files that you can browse, copy, or import on their own.
+First, make an iPad backup on your computer using Finder on Mac or Apple Devices on Windows. ProSave reads that backup, saves the artwork in a dated folder, and checks the saved contents against the source. It runs locally and leaves the original backup unchanged.
 
-This project bridges that gap. After you make a local iPad backup, it finds the Procreate canvas data inside it and reconstructs individual `.procreate` files, including their stored layers and time-lapse data. It processes the collection in a batch, saves a dated archive, and verifies each file's contents against the backup. You do not need to select and export each artwork on the iPad.
+You can also extract PNG previews to browse the saved artwork. The instructions below cover both steps, including how to run ProSave if you haven't used scripts before.
 
-An optional second script extracts the embedded PNG previews from those files, making the archive easier to browse. **Artwork backup and recovery are the main purpose; previews are a supporting feature.**
+- [Before you begin](#before-you-begin)
+- [Mac walkthrough](#walkthrough-mac)
+- [PNG previews](#optional-save-png-previews)
+- [Making another backup](#making-another-backup)
+- [Windows (untested)](#using-windows-untested)
+- [Troubleshooting](#if-something-doesnt-work)
+- [Limitations](#limitations)
+- [Technical details, Linux, and tests](#technical-details)
+
+## Before you begin
+
+You'll need:
+
+- Your iPad, a cable, and a computer for making the initial backup.
+- Space for **both the iPad backup and the extracted artwork**. The device backup includes data from other apps too.
+- **Python 3.11 or newer**, the program that runs ProSave. Installation is covered below.
+- A completed **unencrypted local backup**. “Local” means saved on your computer, rather than in iCloud. “Unencrypted” means the backup isn't protected by a backup password.
+
+ProSave can't read encrypted backups. If you already use them, read Apple's explanation of [backup encryption](https://support.apple.com/108353) before changing that setting; it affects both password protection and which device data is included.
+
+For your first run, save the extracted artwork to your computer's built-in drive. Some external drives use a format called exFAT that ProSave's artwork extractor doesn't support. You can copy the finished artwork to an external drive afterwards.
+
+## Walkthrough: Mac
+
+### 1. Make an iPad backup
+
+If you already have a completed, unencrypted backup, skip to step 2. ProSave will save the artwork as it was when that backup was made.
+
+1. Connect your iPad to your Mac and open **Finder**.
+2. Select your iPad in Finder's sidebar. Follow any **Trust This Computer** prompts.
+3. In **General**, choose **Back up all of the data on your iPad to this Mac**.
+4. ProSave requires **Encrypt local backup** to be unchecked. If you choose to make an unencrypted backup and Finder asks, choose **Don't Encrypt**.
+5. Click **Back Up Now** and wait for it to finish. Keep the iPad connected during the backup.
+
+Apple's [Mac backup guide](https://support.apple.com/108796) has pictures of these screens.
+
+Once the backup has finished, ProSave no longer needs the iPad connected. Don't start another device backup while ProSave is reading this one.
+
+### 2. Find the backup folder
+
+In your iPad's Finder window, click **Manage Backups**. Right-click the backup you just made and choose **Show in Finder**.
+
+The folder usually has a long name made of letters and numbers. It should contain `Manifest.db`, `Manifest.plist`, and `Status.plist`, along with other folders.
+
+Keep this Finder window open. You'll use the entire device backup folder in step 6.
+
+See Apple's [guide to locating backups](https://support.apple.com/108809) if you can't find it.
+
+### 3. Download ProSave
+
+On the [project's GitHub page](https://github.com/jpwhitaker/procreate-tools), click the green **Code** button, then **Download ZIP**. Open the downloaded ZIP to unpack it.
+
+The downloaded folder is called `procreate-tools-main`, after the project's earlier name.
+
+Keep the files together. The `.py` files are the scripts you'll run; you don't need to edit them.
+
+### 4. Open Terminal and check Python
+
+**Terminal** is the Mac app where you type a command to start ProSave.
+
+Press **Command–Space**, type **Terminal**, and press **Return**. Copy this line into its window, then press Return:
+
+```sh
+python3 --version
+```
+
+You should see `Python 3.11` or a newer version. If Python is missing or older, or you're prompted to install developer tools, use the macOS Python installer from [python.org](https://www.python.org/downloads/macos/). Then reopen Terminal and check again.
+
+### 5. Open the ProSave folder in Terminal
+
+1. Type `cd` followed by a **space**. Don't press Return yet.
+2. Drag the **unpacked ProSave folder** from Finder into Terminal. Its location will appear automatically.
+3. Press **Return**.
+
+`cd` tells Terminal which folder to work in. It finishes without a confirmation message.
+
+### 6. Save your artwork
+
+The full command is:
+
+```sh
+python3 archive_library.py --backup "<path to your iPad backup folder>" --output ./artwork-backups
+```
+
+Text inside `<angle brackets>` is a placeholder for your own information. Replace `<path to your iPad backup folder>`, including the brackets, with the folder's full location. Keep the quotation marks: they allow spaces in folder names.
+
+To copy that location, select the device backup folder in Finder and press **Option–Command–C**. Use the folder with the long name that contains `Manifest.db`.
+
+For example, after replacing the placeholder, the command might look like this:
+
+```sh
+python3 archive_library.py --backup "/Users/alex/Library/Application Support/MobileSync/Backup/00008101-001234567890001E" --output ./artwork-backups
+```
+
+Your username and backup folder name will be different. Enter your completed command in Terminal as one line, then press **Return**.
+
+ProSave will read the backup and save the artwork in an `artwork-backups` folder inside your ProSave folder.
+
+There may be a pause while ProSave reads the backup. Then you'll see progress like this example:
 
 ```text
-iPad → local device backup → individual .procreate files → optional PNG previews
-       Finder / other tool   this project's main script    preview script
+Archiving 120 canvases (3.40 GB)
+1/120 extracted: Afternoon sketch
+2/120 extracted: Garden study
+...
+COMPLETE: 120 canvases, 2.80 GB at ...
 ```
 
-The scripts handle extraction and verification after the device backup is complete. Creating or scheduling the iPad backup is a separate step. Everything here runs offline; your artwork is never uploaded.
+Leave Terminal open and keep your Mac awake until you see **`COMPLETE`**. The numbers and names will reflect your gallery.
 
-| Tool | Purpose | Input | Output |
-| --- | --- | --- | --- |
-| `archive_library.py` | Archive the Procreate collection | A completed, unencrypted local iPad backup | Verified `.procreate` files in dated folders |
-| `extract_previews.py` | Browse the archived artwork | A `.procreate` file or folder | Embedded PNG previews |
+### 7. Find and check your saved artwork
 
-**Python 3.11 or newer. No packages to install.** This is an unofficial project, unaffiliated with Procreate.
+Open the ProSave folder in Finder, then open:
 
-## Platform support and what has been tested
+**artwork-backups → your device's folder → the dated folder → canvases**
 
-The extraction scripts run on macOS, Windows, and Linux. They read an existing local backup; they do not need Procreate installed on the computer or a live connection to an iPad.
+The `canvases` folder contains your `.procreate` files. Filenames include an identifier so two drawings with the same title can both be saved. The date uses UTC, so it may differ from your local date.
 
-| Platform | Creating the device backup | Validation so far |
-| --- | --- | --- |
-| macOS | [Finder](https://support.apple.com/108796) | Real iPad backup extracted, representative canvases imported into Procreate; automated tests pass |
-| Windows | [Apple Devices or iTunes](https://support.apple.com/en-us/108967) | Automated extraction and preview tests pass; a real Windows-created backup has not been tested end to end here |
-| Linux | Copy a completed compatible backup from another computer, or use a separate tool such as [`idevicebackup2`](https://github.com/libimobiledevice/libimobiledevice) | Automated extraction and preview tests pass; Linux device-backup creation has not been tested here |
+Keep the accompanying `verification` folder and `.json` files. ProSave uses these records to check its work on later runs.
 
-[CI](https://github.com/jpwhitaker/procreate-tools/actions/workflows/tests.yml) runs the seven tests on all three operating systems with Python 3.11 and 3.14. These use synthetic backup data and verify file handling and recovery logic. They do not prove compatibility with every iPadOS, Procreate, or backup-tool version. A Linux backup tool's ability to connect to a particular iPad is separate from this project's extraction support.
+Send a few `.procreate` files to your iPad with AirDrop and open them in Procreate. Check their appearance, layers, and time-lapse, including a complicated drawing. This checks that the saved files open correctly; importing adds copies to your gallery.
 
-The backup extractor needs an output filesystem that supports hard links, such as APFS, NTFS, or ext4. exFAT is not supported for backup extraction. The standalone preview script does not have this hard-link requirement.
+Keep the original iPad backup. Copy the finished dated artwork folder to another drive or storage service so it isn't only on this computer.
 
-## Get started
+## Optional: save PNG previews
 
-Download this repository with **Code → Download ZIP**, then extract it. Or clone it:
+To save a PNG preview of each artwork, run this in the same Terminal window:
 
 ```sh
-git clone https://github.com/jpwhitaker/procreate-tools.git
-cd procreate-tools
+python3 extract_previews.py ./artwork-backups --output ./previews --recursive
 ```
 
-Open a terminal in the downloaded folder. On Windows, use `py -3` instead of `python3` in the commands below. Quote paths that contain spaces.
+The images appear in a `previews` folder, organised into the same device and date folders as the artwork.
 
-## Recover canvases from an iPad backup
+These are Procreate's stored previews. Their size and orientation depend on the document, and animations produce a still image. Keep the `.procreate` files: the PNGs don't contain editable layers and aren't full-resolution exports.
 
-This workflow avoids selecting and exporting every canvas on the iPad. It uses `archive_library.py` and `procreate_backup.py` together.
+## Making another backup
 
-### 1. Make a local backup
+Make a fresh iPad backup and repeat the extraction step. If you've closed Terminal, repeat the step that opens your ProSave folder in Terminal first.
 
-Create a local iPad backup using the appropriate tool for your platform, then wait for it to finish. See the platform table above. On Linux, you can also work with a completed backup copied from a Mac or Windows computer.
+- **Same device backup:** ProSave checks the files it already saved and continues with missing artwork.
+- **New device backup:** ProSave creates another dated folder with a full copy of that backup's artwork. Older folders stay in place, so allow space for each new copy.
 
-The extractor currently supports **unencrypted backups only**. Unencrypted backups are not password-protected and omit some sensitive device data. Encrypted backup decryption is not implemented.
+You can run the preview command again too. Identical previews are skipped.
 
-Locate the device folder containing `Manifest.db`, `Manifest.plist`, and `Status.plist`. On macOS, Finder's **Manage Backups** dialog can reveal a backup in Finder. The usual parent directory is:
+You need to start each iPad backup and ProSave run yourself; there is no automatic schedule.
 
-```text
-~/Library/Application Support/MobileSync/Backup/
+## Using Windows (untested)
+
+The full backup and recovery process hasn't been tested on Windows. I'm happy to accept pull requests for Windows fixes and improvements to these instructions.
+
+On Windows, use these steps in place of the Mac walkthrough:
+
+1. Make a completed, unencrypted backup using **Apple Devices** or **iTunes**. Follow Apple's [Windows backup guide](https://support.apple.com/en-us/108967), then its [backup location guide](https://support.apple.com/108809) to find the device folder containing `Manifest.db`.
+2. Download and unpack ProSave as described above. Install **Python 3.11 or newer** from [python.org](https://www.python.org/downloads/windows/) if needed.
+3. Open the unpacked ProSave folder in File Explorer. Click its address bar, type `powershell`, and press Enter. This opens a command window in that folder.
+4. Run `py -3 --version` to check Python is available and is version 3.11 or newer.
+5. In File Explorer, right-click the device backup folder and choose **Copy as path**. On some Windows versions, hold Shift while right-clicking to see it.
+6. Use the command below, replacing the entire quoted example location with the copied path. Keep one pair of quotes around the location. Enter it as one line:
+
+```powershell
+py -3 archive_library.py --backup "C:\replace-this-with-your-backup-folder" --output .\artwork-backups
 ```
 
-### 2. Extract the artwork
+Wait for `COMPLETE`, then find and check your `.procreate` files as described in the Mac walkthrough. To make optional previews:
+
+```powershell
+py -3 extract_previews.py .\artwork-backups --output .\previews --recursive
+```
+
+Automated tests pass on Windows, Mac, and Linux using generated backups. Extraction from a real iPad backup and sample imports into Procreate have been tested on Mac. That full process hasn't yet been tested with a Windows-created backup.
+
+## If something doesn't work
+
+| What you see | What to check |
+| --- | --- |
+| Python isn't found | Install Python, then close and reopen your command window. On Windows, use `py -3`; on Mac, use `python3`. |
+| “Can't open file” followed by `archive_library.py` | Your command window may be in the wrong folder. Repeat the step that opens the unpacked ProSave folder in Terminal or PowerShell. |
+| The backup can't be found or read | Select the device folder containing `Manifest.db`, rather than the parent `Backup` folder or an individual file. |
+| The backup is encrypted or incomplete | ProSave needs a finished, unencrypted local backup. An iCloud backup alone won't work. |
+| There isn't enough space | Make room for the extracted artwork while keeping the source backup intact. |
+| A file conflicts, data is missing, or verification fails | Stop and keep the error message. Don't delete files from the original backup to fix it. |
+
+If you're stuck, [open an issue](https://github.com/jpwhitaker/procreate-tools/issues) with your operating system, Python version, and the error text. Remove personal information from the message, and don't upload your iPad backup or private artwork.
+
+## Limitations
+
+- ProSave saves canvas documents. It doesn't recreate your gallery stacks, export your brush library, or restore all Procreate settings.
+- Procreate's internal file format can change. Keep the original backup and check sample imports.
+- This is an independent, unofficial project, unaffiliated with Procreate.
+
+<a id="technical-details"></a>
+
+<details>
+<summary>Technical details, Linux, and tests</summary>
+
+ProSave uses Python's standard library and requires Python 3.11 or newer.
+
+`archive_library.py` uses `procreate_backup.py` to read the completed device backup, reconstruct `.procreate` archives, and verify their contents against the source using SHA-256. The backup is opened for reading only. A `complete.json` record is written after the full run succeeds.
+
+The output filesystem must support hard links, such as APFS, NTFS, or ext4. exFAT is not supported for artwork extraction. The separate preview script doesn't have this requirement.
+
+On Linux, use a completed compatible backup copied from Mac or Windows, or a separate backup tool such as [`idevicebackup2`](https://github.com/libimobiledevice/libimobiledevice). Creating the iPad backup on Linux has not been tested here. From the unpacked project folder:
 
 ```sh
-python3 archive_library.py \
-  --backup "/path/to/device-backup-folder" \
-  --output "./artwork-backups"
+python3 archive_library.py --backup "/path/to/device-backup-folder" --output ./artwork-backups
+python3 extract_previews.py ./artwork-backups --output ./previews --recursive
 ```
 
-On Windows, enter this as one line with `py -3`. The output disk must support hard links; see the platform requirements above.
+Each new backup produces a full artwork snapshot. There is no automatic deletion of old snapshots or sharing of unchanged data between snapshots.
 
-Each backup gets a folder containing:
+A hard crash can leave `.running` or `.partial` files. Conflicting output and archives without verification records require inspection before retrying; ProSave refuses to overwrite them.
 
-```text
-artwork-backups/
-  <device-id>/
-    <backup-date-in-UTC>/
-      canvases/       # Individual .procreate files
-      verification/   # Per-canvas checksums and metadata
-      catalog.json    # Canvas inventory
-      complete.json   # Written after the whole run succeeds
-```
-
-Filenames include canvas IDs so artwork with identical names remains distinct. The original document bytes, layer files, and stored time-lapse files are preserved. The script checks archive members against the source with SHA-256 before marking the run complete.
-
-### 3. Check recovery and make previews
-
-Import representative recovered canvases into Procreate and check their appearance, layers, and time-lapse. Keep the original iPad backup too. The format is undocumented and may change between app versions.
-
-To generate preview PNGs, run `extract_previews.py` against the new `canvases` folder.
-
-## Optional: extract PNG previews
-
-You only need **[extract_previews.py](extract_previews.py)** for this feature.
-
-```sh
-python3 extract_previews.py "/path/to/artwork" --output "./previews"
-```
-
-For one file:
-
-```sh
-python3 extract_previews.py "/path/to/Drawing.procreate" --output "./previews"
-```
-
-Include subfolders and preserve their structure:
-
-```sh
-python3 extract_previews.py "/path/to/artwork" --output "./previews" --recursive
-```
-
-The script copies the embedded `QuickLook/Thumbnail.png` from each document without changing its pixels. Previews are often around 1,024 pixels on the long edge; the actual resolution and orientation are whatever Procreate stored. They are lower-resolution previews, not full-resolution layer renders. Animated canvases produce a still image.
-
-Each PNG keeps the artwork's base filename. Existing identical PNGs are skipped; different existing files are never overwritten. Missing or invalid thumbnails are reported individually, and any failures produce a nonzero exit code.
-
-To save a report as well:
-
-```sh
-python3 extract_previews.py "/path/to/artwork" --output "./previews" --report "./preview-report.json"
-```
-
-Reports include local paths. They are never overwritten; use a new filename or omit `--report` when repeating a run.
-
-## Repeat runs and storage
-
-- The source backup is read-only. Do not run another device backup during extraction.
-- Repeating the same completed backup verifies existing archives against their source and resumes missing canvases.
-- Each new device backup creates a separate full artwork snapshot. There is no deduplication, automatic retention policy, or deletion.
-- The script checks free space before extraction and keeps a 2 GB reserve in its estimate.
-- These scripts process files already on the computer. They do not connect to the iPad, start backups, install schedules, or bypass device-passcode prompts.
-
-The canvas extractor does not recreate gallery stacks, export a brush library, or restore every Procreate setting.
-
-## If a run fails
-
-Read the error before retrying. Incomplete or encrypted backups are rejected. Missing source data, changed backups, checksum failures, and conflicting output files also stop extraction.
-
-A hard crash can leave `.running` or `.partial` files. Inspect them and confirm no extractor is running before removing those generated files. A `.procreate` file without its verification receipt also requires inspection: the script refuses to overwrite it. Do not remove files from the source backup to resolve an extraction error.
-
-## Development
+Run the tests with:
 
 ```sh
 python3 -m unittest -v test_extract_previews test_archive_library
 ```
 
-Tests use temporary synthetic documents. They check exact byte preservation, repeat runs, corruption detection, missing data, and incomplete backup rejection.
+[Automated tests](https://github.com/jpwhitaker/procreate-tools/actions/workflows/tests.yml) run on macOS, Windows, and Linux with Python 3.11 and 3.14. They check byte preservation, repeat runs, corruption detection, missing data, and incomplete backup rejection using generated test data. They don't establish compatibility with every Procreate or iPadOS version.
 
-Please use synthetic files in bug reports. Artwork, backup databases, and generated reports can contain private information.
-
-## Related projects
-
-- [Procreate Thumbnails Extractor](https://github.com/raffe1234/Procreate-Thumbnails-Extractor) — other scripts for extracting embedded PNG previews.
-- [Procreate Exporter](https://github.com/alcor6502/Procreate-Exporter) — reconstructs canvases from previously extracted backup data.
+</details>
 
 ## License
 
