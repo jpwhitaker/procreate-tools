@@ -15,6 +15,7 @@ import re
 import shutil
 import sqlite3
 import stat
+import uuid
 import zipfile
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -55,6 +56,69 @@ def payload(backup, file_id):
     if not re.fullmatch(r"[0-9a-f]{40}", file_id):
         raise ValueError("Invalid backup file ID")
     return backup / file_id[:2] / file_id
+
+
+def gallery_layout(backup, connection, documents):
+    """Read stack membership/order without changing canvas records or source files."""
+    rows = connection.execute(
+        "SELECT fileID FROM Files WHERE domain=? AND flags=1 AND relativePath=?",
+        (DOMAIN, "Library/Application Support/Finder.archive"),
+    ).fetchall()
+    if not rows:
+        return None
+    if len(rows) != 1:
+        raise ValueError("Ambiguous gallery metadata; use --flat to extract without stacks")
+    data = payload(backup, rows[0][0]).read_bytes()
+    try:
+        root, objects = archive_root(data)
+        known = {d["id"].upper(): d["id"] for d in documents}
+        directories = {}
+        seen = set()
+
+        def array(value):
+            result = resolve(value, objects)["NS.objects"]
+            if not isinstance(result, list):
+                raise ValueError("Invalid gallery list")
+            return result
+
+        def visit(reference, folders, depth=0):
+            if depth > 20:
+                raise ValueError("Gallery nesting is too deep")
+            node = resolve(reference, objects)
+            identifier = str(uuid.UUID(bytes=resolve(
+                node["FinderModelDocumentArchiveIdentifierKey"], objects
+            )["NS.uuidbytes"])).upper()
+            if identifier in seen:
+                raise ValueError("Duplicate or cyclic gallery entry")
+            seen.add(identifier)
+            children_key = "FinderModelDocumentArchiveSubDocumentsKey"
+            if children_key in node:
+                name = resolve(node.get("FinderModelDocumentArchiveStackNameKey"), objects)
+                if name is not None and not isinstance(name, str):
+                    raise ValueError("Unsupported stack name")
+                # IDs prevent duplicate names and Windows reserved names colliding.
+                safe = re.sub(r'[\x00-\x1f/\\:*?"<>|]', "_", name or "Stack").strip(". ")
+                safe = (safe or "Stack")[:60]
+                while len(safe.encode("utf-8")) > 100:
+                    safe = safe[:-1]
+                folder = f"{safe}--{identifier}"
+                children = [visit(child, folders + [folder], depth + 1)
+                            for child in array(node[children_key])]
+                return {"type": "stack", "id": identifier, "name": name,
+                        "folder": "/".join(folders + [folder]), "items": children}
+            if identifier not in known:
+                raise ValueError("Gallery references an artwork missing from the backup")
+            canvas_id = known[identifier]
+            directories[canvas_id] = "/".join(folders)
+            return {"type": "canvas", "id": canvas_id}
+
+        items = [visit(ref, []) for ref in array(root["FinderModelControllerArchiveDocumentsKey"])]
+        if set(directories) != {d["id"] for d in documents}:
+            raise ValueError("Gallery does not account for every artwork")
+        return {"source_file_id": rows[0][0], "source_sha256": hashlib.sha256(data).hexdigest(),
+                "items": items, "directories": directories}
+    except (KeyError, IndexError, TypeError, ValueError, AttributeError, RecursionError) as exc:
+        raise ValueError(f"Cannot read gallery stacks: {exc}. Use --flat to extract without stacks") from exc
 
 
 def inventory(backup, connection):

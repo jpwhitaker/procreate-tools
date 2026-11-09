@@ -15,7 +15,7 @@ import shutil
 import zipfile
 from datetime import datetime, timezone
 
-from procreate_backup import open_backup, inventory, extract, payload
+from procreate_backup import open_backup, inventory, extract, payload, gallery_layout
 
 
 
@@ -80,6 +80,8 @@ def main():
     parser.add_argument("--backup", type=Path, required=True,
                         help="Folder containing Manifest.db, Manifest.plist, and Status.plist")
     parser.add_argument("--output", type=Path, default=Path(__file__).resolve().parent / "archives")
+    parser.add_argument("--flat", action="store_true",
+                        help="Save all artwork directly in canvases, without stack folders")
     args = parser.parse_args()
     backup, connection = open_backup(args.backup)
     signature = source_signature(backup)
@@ -96,13 +98,31 @@ def main():
         f.write(str(os.getpid()))
     try:
         report, files = inventory(backup, connection)
+        layout_file = output / "layout.json"
+        catalog = output / "catalog.json"
+        previous_layout = json.loads(layout_file.read_text()) if layout_file.exists() else None
+        # Archives made before stack support retain their original paths/receipts.
+        legacy = catalog.exists() and previous_layout is None
+        mode = previous_layout["mode"] if previous_layout else ("flat" if args.flat or legacy else "stacks")
+        if args.flat and mode != "flat":
+            raise ValueError("This snapshot uses stack folders. Choose a different --output for --flat")
+        gallery = gallery_layout(backup, connection, report["canvases"]) if mode == "stacks" else None
+        layout = {"version": 1, "mode": mode, "gallery": gallery}
+        if previous_layout is not None and previous_layout != layout:
+            raise ValueError("Existing snapshot layout differs from gallery metadata")
+        directories = gallery["directories"] if gallery else {}
+        if mode == "stacks" and gallery is None:
+            print("No gallery metadata found; saving artwork directly in canvases.", flush=True)
+        if legacy:
+            print("Resuming an older flat snapshot; keeping its existing layout.", flush=True)
         connection.close()
         assert_unchanged(backup, signature)
         if not report["canvases"]:
             raise ValueError("No Procreate canvases found")
         report["backup"] = str(backup)
         report["source_signature"] = signature
-        catalog = output / "catalog.json"
+        if not legacy and previous_layout is None:
+            write_json_new(layout_file, layout)
         if catalog.exists():
             if json.loads(catalog.read_text()) != report:
                 raise ValueError("Existing snapshot catalog differs from source")
@@ -114,22 +134,36 @@ def main():
         verification.mkdir(exist_ok=True)
         # Conservative whole-run estimate; existing completed files need no space.
         needed = sum(d["bytes"] for d in report["canvases"]
-                     if not list(verification.glob(f"*--{d['id']}.verification.json")))
+                     if not list((verification / directories.get(d["id"], "")).glob(
+                         f"*--{d['id']}.verification.json")))
         if shutil.disk_usage(output).free < needed * 1.05 + 2_000_000_000:
             raise ValueError("Insufficient free space for library plus 2 GB reserve")
         print(f"Archiving {report['canvas_count']} canvases ({report['canvas_bytes']/1e9:.2f} GB)", flush=True)
         archived = []
+        if gallery:
+            # Include empty stacks, and mirror the layout for verification records.
+            def make_folders(items):
+                for item in items:
+                    if item["type"] == "stack":
+                        (canvases / item["folder"]).mkdir(parents=True, exist_ok=True)
+                        (verification / item["folder"]).mkdir(parents=True, exist_ok=True)
+                        make_folders(item["items"])
+            make_folders(gallery["items"])
         for n, doc in enumerate(report["canvases"], 1):
             assert_unchanged(backup, signature)
-            path = verify_previous(backup, doc, files[doc["id"]], canvases, verification)
+            canvas_dir = canvases / directories.get(doc["id"], "")
+            receipt_dir = verification / directories.get(doc["id"], "")
+            path = verify_previous(backup, doc, files[doc["id"]], canvas_dir, receipt_dir)
             reused = path is not None
             if path is None:
-                path = extract(backup, doc, files[doc["id"]], canvases, verification)
+                path = extract(backup, doc, files[doc["id"]], canvas_dir, receipt_dir)
             assert_unchanged(backup, signature)
             archived.append({"id": doc["id"], "file": str(path.relative_to(output)),
                              "bytes": path.stat().st_size, "sha256": digest_file(path)})
             print(f"{n}/{report['canvas_count']} {'verified existing' if reused else 'extracted'}: {doc['name']}", flush=True)
         assert_unchanged(backup, signature)
+        if gallery and digest_file(payload(backup, gallery["source_file_id"])) != gallery["source_sha256"]:
+            raise ValueError("Gallery metadata changed during extraction; wait for backup to finish")
         summary = {"completed_utc": datetime.now(timezone.utc).isoformat(),
                    "backup": str(backup), "canvas_count": len(archived),
                    "archive_bytes": sum(a["bytes"] for a in archived),

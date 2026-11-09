@@ -4,10 +4,13 @@ ProSave saves the Procreate artwork from an iPad backup as individual, editable 
 
 First, make an iPad backup on your computer using Finder on Mac or Apple Devices on Windows. ProSave reads that backup, saves the artwork in a dated folder, and checks the saved contents against the source. It runs locally and leaves the original backup unchanged.
 
+By default, artwork is organised into folders matching your gallery stacks. You can use `--flat` to save everything in one folder instead.
+
 You can also extract PNG previews to browse the saved artwork. The instructions below cover both steps, including how to run ProSave if you haven't used scripts before.
 
 - [Before you begin](#before-you-begin)
 - [Mac walkthrough](#walkthrough-mac)
+- [Stack folders or a flat directory](#stack-folders-or-a-flat-directory)
 - [PNG previews](#optional-save-png-previews)
 - [Making another backup](#making-another-backup)
 - [Windows (untested)](#using-windows-untested)
@@ -122,13 +125,38 @@ Open the ProSave folder in Finder, then open:
 
 **artwork-backups → your device's folder → the dated folder → canvases**
 
-The `canvases` folder contains your `.procreate` files. Filenames include an identifier so two drawings with the same title can both be saved. The date uses UTC, so it may differ from your local date.
+The `canvases` folder contains a subfolder for each gallery stack. Unstacked artwork sits directly in `canvases`. File and stack folder names include identifiers so repeated names remain distinct. The date uses UTC, so it may differ from your local date.
 
-Keep the accompanying `verification` folder and `.json` files. ProSave uses these records to check its work on later runs.
+Keep the accompanying `verification` folder and `.json` files. ProSave uses these records to check its work on later runs. `layout.json` also records stack names, membership, and the original gallery order; Finder may display the files in a different order.
 
 Send a few `.procreate` files to your iPad with AirDrop and open them in Procreate. Check their appearance, layers, and time-lapse, including a complicated drawing. This checks that the saved files open correctly; importing adds copies to your gallery.
 
 Keep the original iPad backup. Copy the finished dated artwork folder to another drive or storage service so it isn't only on this computer.
+
+## Stack folders or a flat directory
+
+Stack folders are the default. For example:
+
+```text
+canvases/
+  Studies--<stack-id>/
+    Drawing--<canvas-id>.procreate
+  Unstacked drawing--<canvas-id>.procreate
+```
+
+To put all artwork directly in `canvases`, add `--flat` to the command:
+
+```sh
+python3 archive_library.py --backup "<path to your iPad backup folder>" --output ./artwork-backups --flat
+```
+
+On Windows, use `py -3` in place of `python3`.
+
+Each saved backup keeps the layout chosen on its first run. Older ProSave archives keep their flat layout. To extract the same backup with a different layout, use a different output folder, such as `--output ./artwork-backups-flat`.
+
+If the backup has no gallery metadata, ProSave reports this and saves the artwork directly in `canvases`. If gallery metadata is present but cannot be read consistently, extraction stops; `--flat` lets you extract the artwork without it.
+
+These folders preserve your organisation on the computer. Importing the artwork into Procreate does not automatically recreate its stacks.
 
 ## Optional: save PNG previews
 
@@ -138,7 +166,7 @@ To save a PNG preview of each artwork, run this in the same Terminal window:
 python3 extract_previews.py ./artwork-backups --output ./previews --recursive
 ```
 
-The images appear in a `previews` folder, organised into the same device and date folders as the artwork.
+The images appear in a `previews` folder, following the artwork's device, date, and stack folders.
 
 These are Procreate's stored previews. Their size and orientation depend on the document, and animations produce a still image. Keep the `.procreate` files: the PNGs don't contain editable layers and aren't full-resolution exports.
 
@@ -193,7 +221,7 @@ If you're stuck, [open an issue](https://github.com/jpwhitaker/procreate-tools/i
 
 ## Limitations
 
-- ProSave saves canvas documents. It doesn't recreate your gallery stacks, export your brush library, or restore all Procreate settings.
+- ProSave preserves stacks as folders, but doesn't recreate stacks inside Procreate when you import the files. It doesn't export your brush library or restore all Procreate settings.
 - Procreate's internal file format can change. Keep the original backup and check sample imports.
 - This is an independent, unofficial project, unaffiliated with Procreate.
 
@@ -205,6 +233,8 @@ If you're stuck, [open an issue](https://github.com/jpwhitaker/procreate-tools/i
 ProSave uses Python's standard library and requires Python 3.11 or newer.
 
 `archive_library.py` uses `procreate_backup.py` to read the completed device backup, reconstruct `.procreate` archives, and verify their contents against the source using SHA-256. The backup is opened for reading only. A `complete.json` record is written after the full run succeeds.
+
+Stack membership and order come from Procreate's `Finder.archive` gallery metadata. `layout.json` records the output mode and, in stack mode when metadata is available, the gallery tree and source checksum. Stack folder names are sanitised for cross-platform use and include unique IDs. Unnamed stacks use `Stack` as their folder name prefix. Verification records mirror the artwork folders.
 
 The output filesystem must support hard links, such as APFS, NTFS, or ext4. exFAT is not supported for artwork extraction. The separate preview script doesn't have this requirement.
 
