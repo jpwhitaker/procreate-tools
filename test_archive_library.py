@@ -10,6 +10,7 @@ import tempfile
 import unittest
 import zipfile
 from datetime import datetime
+from contextlib import closing
 
 from procreate_backup import DOMAIN
 
@@ -38,7 +39,7 @@ class RecoveryTests(unittest.TestCase):
             "layers/layer.chunk": b"exact layer pixels\x00\xff",
             "video/segment": b"exact time-lapse bytes\x00\xfe",
         }
-        with sqlite3.connect(self.backup / "Manifest.db") as db:
+        with closing(sqlite3.connect(self.backup / "Manifest.db")) as db:
             db.execute("CREATE TABLE Files(fileID TEXT, domain TEXT, relativePath TEXT, flags INT, file BLOB)")
             for member, data in self.members.items():
                 relative = f"Library/Application Support/test-canvas/{member}"
@@ -48,6 +49,7 @@ class RecoveryTests(unittest.TestCase):
                 p.write_bytes(data)
                 metadata = keyed({"Size": len(data), "LastModified": 1700000000})
                 db.execute("INSERT INTO Files VALUES(?,?,?,?,?)", (fid, DOMAIN, relative, 1, metadata))
+            db.commit()
 
     def run_job(self):
         return subprocess.run([sys.executable, str(Path(__file__).with_name("archive_library.py")),
